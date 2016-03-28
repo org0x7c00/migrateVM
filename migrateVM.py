@@ -22,25 +22,35 @@ import image_sync
 logging.basicConfig(level=logging.ERROR)
 
 class DoMigrate(object):
-    def __init__(self,*os_creds,instanceID):
-        self.nova = NovaManager(*os_creds, instanceID)
+    def __init__(self,*os_creds):
+        self.nova = NovaManager(*os_creds)
         self.glance = GlanceManager(*os_creds)
         self.cinder = CinderManager(*os_creds)
 
-    def run(self):
-        self.nova.server_create_image()
+    def print_vm_list(self):
+        self.nova.server_list() 
+        #Need to be implemented: print VM list(better in a table)
+    def choose_migrate(self):
+        self.index = int(input("====>  Choose which to be migrate:"))
+        return self.index
+    def doMigrate(self):
+        self.imageID = self.nova.create_server_image(self.index)
+        glance.download_image(self.imageID)
+        
 
 
 class NovaManager(object):
     def __init__(self, username, password, tenant_id, auth_url):
-        self.client = nova_client.Client(username, password, tenant_id, auth_url)
-    
+        self.client = nova_client.Client(username, password, tenant_id, auth_url)     
+        self.instanceID = instanceID #tmp var
     #return a list of serverObject    
     def server_list(self):
-        return self.client.servers.list()
+        self.serverObjectList =  self.client.servers.list()
+        return self.serverObjectList
     
     #serverObject is from self.client.servers.list()
-    def server_create_image(self,serverObject):
+    def create_server_image(self,vm_index):
+        serverObject = self.server_list()[vm_index+1]
         self.image_name = serverObject.name + time.strftime("_%Y%m%d%H%M%S",time.localtime())
         self.imageID = self.client.servers.create_image(serverObject, image_name)   
         return self.imageID
@@ -68,7 +78,7 @@ class GlanceManager(object):
     def image_get(self, id):
         return self.client.images.get(id)
     
-    def download_image(self,owner=None, is_public=None):
+    def download_image(self,owner=None, is_public=None, imageID):
         tenant_images = self.client.list(owner=owner,is_public=is_public)
         snapshots = list()
         images = list()
@@ -80,10 +90,10 @@ class GlanceManager(object):
             else:
                 images.append(image)
         for v_image in images:
-            if v_image['status'] == "active"
+            if v_image['status'] == "active" and v_image['id'] == imageID:
             print "Start download {name}".format(name=v_image['name'])
             download_command = ['glance','image-download','{}'.format(v_image['id']),
-                                '--file','{name}-{id}'.format(name=v_image['name'], id=v_image['id'])]
+                                '--file','{name}-{id}'.format(name=v_image['name'], id=v_image['id'][:5])]
             download_status = subprocess.Popen(download_command, 
                                                stdout=subprocess.PIPE,
                                                stderr=subprocess.PIPE).communicate()
@@ -92,14 +102,14 @@ class GlanceManager(object):
 
 class CinderManager(object):
     #cinder = client.Client('1','admin','admin','admin','http://172.16.101.2:5000/v2.0/')
-    def __init__(self, username, password, auth_url):
+    def __init__(self, username, password, tenant_id, auth_url):
         self.client = cinder_client.Client(username,
                                            password,
-                                           project,
+                                           tenant_id,
                                            auth_url)
     def volume_list(self):
         return self.client.volumes.list()
-
+    #this volume id should be related with VM
     def create_vol_snapshot(self,volumeObject):
         #client.volume_snapshots
         snapshot_vol = "cinder snapshot-volume --force True --display-name %s %s"%(volumeObject.display_name,
@@ -153,9 +163,11 @@ def main():
 
     args = parser.parse_args()
     os_creds = (args.username[0], args.password[0],
-                args.tenant_id[0],  args.auth_url[0])
+                args.tenant_id[0],  args.auth_url[0],
+                args.instanceID[0])
     
-    migrate = DoMigrate(*os_creds, args.instanceID[0])
+    migrate = DoMigrate(*os_creds)
+    migrate.choose_migrate()
     migrate.run()
 
 if __name__ == "__main__":
