@@ -71,6 +71,7 @@ class GlanceManager(object):
                       endpoint = keystone_mgr.get_endpoint("image"),
                       token = keystone_mgr.get_token(),
                       )
+        self.tenant_id = keystone_mgr.get_project_id()
     #image_list() for download the image
     def image_list(self, owner=None, is_public=None)
         return self.client.images.list(owner=owner, is_public=is_public)
@@ -79,7 +80,7 @@ class GlanceManager(object):
         return self.client.images.get(id)
     
     def download_image(self,owner=None, is_public=None, imageID):
-        tenant_images = self.client.list(owner=owner,is_public=is_public)
+        tenant_images = self.client.list(owner=self.tenant_id,is_public=is_public)
         snapshots = list()
         images = list()
         #not sure
@@ -146,6 +147,8 @@ class Credit(object):
     def get_endpoint(self,service_type,endpoint_type="publicURL"):
         catalog = self.client.service_catalog.get_endpoints()
         return catalog[service_type][0][endpoint_type]
+    def get_project_id(self):
+        return self.client.tenant_id
 
 def main():
     desc = "Migrate VM instance between OpenStack Cluster"
