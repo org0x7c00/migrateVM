@@ -39,20 +39,22 @@ class GlanceManager(object):
                     snapshots.append(image)
             else:
                 images.append(image)
-        print "-------image-------"
+        print "----------image--------"
         print image
         print '>>>>>>snapshots>>>>>>>>'
         print snapshots
-        print '>>>>>>>>>>>>>>>'
+        print '>>>>>>>>>>>>>>>>>>>>>>>'
         for v_image in images:
             if v_image.id == self.imageID and v_image.status == 'active':
                 print "Start download {name}".format(name=v_image.name)
-                download_command = ['glance','image-download','{}'.format(v_image.id),
-                                '--file','{name}-{id}'.format(name=v_image.name, id=v_image.id)]
+                download_command = ['glance',
+                '--os-username admin --os-password admin --os-tenant-name admin',
+                'image-download','{}'.format(v_image.id),
+                '--file','{name}-{id}'.format(name=v_image.name, id=v_image.id)]
                 download_status = subprocess.Popen(download_command,
                                                stdout=subprocess.PIPE,
                                                stderr=subprocess.PIPE).communicate()
-                print "Name:{name},   ID:{id},    Status:{status}".format(name=v_image.name, id=v_image.id,
+                print "Name:{name}, ID:{id}, Status:{status}".format(name=v_image.name, id=v_image.id,
                                                                       status = download_status)
                 
 class NovaManager(object):
@@ -69,39 +71,45 @@ class NovaManager(object):
         self.imageID = self.client.servers.create_image(self.serverObject, self.image_name)
         return self.imageID
     def get_attached_volumes(self,serverObject):
-        self.volumesID = self.client.volumes.get_server_volumes(serverObject.id)
-        return self.volumesID
+        self.volumesObject= self.client.volumes.get_server_volumes(serverObject.id)
+        return self.volumesObject
 
 class CinderManager(object):
     def __init__(self,username,password,tenant_name,auth_url):
         self.client = cinder_client.Client(username,password,tenant_name,auth_url)    
     
+    snapshotObjectlist = list()
     def create_vol_snapshot(self, volumeObject):
         vol_snapshot_id = list()
-        self.snapshotObjectlist = list()
         for vol_obj in volumeObject:
             snapshotObject = self.client.volume_snapshots.create(vol_obj.id,force=True)
             if snapshotObject:
                 vol_snapshot_id.append(snapshotObject.id)
-                self.snapshotObjectlist.append(snapshotObject)
+                snapshotObjectlist.append(snapshotObject)
         return vol_snapshot_id
     
     def create_vol_based_on_snapshot(self,self.snapshotObjectlist):
+        vol_base_snaplist = list();
         for snapshotObject in self.snapshotObjectlist:
-            self.volsnapobj = self.client.volumes.create(snapshotObject.size, snapshotObject.id, snapshotObject.display_name)
-        return self.volsnapobj
+            self.vol_base_snap = self.client.volumes.create(snapshotObject.size, 
+                                                            snapshotObject.id, 
+                                                            snapshotObject.display_name)
+            vol_base_snaplist.append(vol_base_snap)
+        return self.vol_base_snaplist
     
-    def upload_to_image(self,volumeObject, image_name):
-        #this volumeObject is a volume which based on the snapshot(=volsnapobj)
-        vol_image = self.client.volumes.upload_to_image(volumeObject, True, image_name, "bare", "raw")
-        self.imageID = vol_image[1]['os-volume_upload_image']['image_id']
+    def upload_to_image(self,volumeObjectlist, image_name):
+        for volumeObject in volumeObjectlist:
+            vol_image = self.client.volumes.upload_to_image(volumeObject,True,image_name,"bare","raw")
+            self.imageID = vol_image[1]['os-volume_upload_image']['image_id']
         return self.imageID
 
 def main():
-    auth = {'username':'admin','password':'admin','tenant_name':'admin','auth_url':'http://172.16.101.2:5000/v2.0/'}
+    auth = {'username':'admin','password':'admin','tenant_name':'admin',
+            'auth_url':'http://172.16.101.2:5000/v2.0/'}
     token = Credit(**auth).get_token()
     endpoint = Credit(**auth).get_endpoint('image',"publicURL")
     tenant_id = Credit(**auth).get_project_id()
+    cindermanager = CinderManager(**auth)
     novamanager = NovaManager(**auth)   
     serverObjectList = novamanager.server_list()
     print serverObjectList
@@ -110,14 +118,14 @@ def main():
     serverObject = serverObjectList[1]
     print "server ID:",serverObject.id
     volumeObject = novamanager.get_attached_volumes(serverObject)
-    print "Attached volume Object:",volumeObject
-    cindermanager = CinderManager(**auth)
+    print "Attached volume Object(One or more)",volumeObject
     vol_snapshot_id =  cindermanager.create_vol_snapshot(volumeObject) #a snapshot id list
-    cindermanager.create_vol_based_on_snapshot(cindermanager.snapshotObjectlist)
-    uploaded_imageID = cindermanager.upload_to_image(volumeObject, "image_name")
+   
+    vol_base_snap = cindermanager.create_vol_based_on_snapshot(cindermanager.snapshotObjectlist)
+    uploaded_imageID = cindermanager.upload_to_image(vol_base_snap, "image_name")
     imageID = uploaded_imageID
-    #glancemanager = GlanceManager(token,endpoint,imageID)
-    #glancemanager.download_image(owner=tenant_id,is_public=True)
+    glancemanager = GlanceManager(token,endpoint,imageID)
+    glancemanager.download_image(owner=tenant_id,is_public=True)
 
 
 
