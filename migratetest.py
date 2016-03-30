@@ -88,11 +88,12 @@ class CinderManager(object):
     
     def create_vol_based_on_snapshot(self,self.snapshotObjectlist):
         for snapshotObject in self.snapshotObjectlist:
-            self.vol_id = self.client.volumes.create(snapshotObject.size, snapshotObject.id, snapshotObject.display_name)
-        return self.vol_id
+            self.volsnapobj = self.client.volumes.create(snapshotObject.size, snapshotObject.id, snapshotObject.display_name)
+        return self.volsnapobj
     
     def upload_to_image(self,volumeObject, image_name):
-        vol_image = self.client.volumes.upload_to_image(volumeObject, image_name)
+        #this volumeObject is a volume which based on the snapshot(=volsnapobj)
+        vol_image = self.client.volumes.upload_to_image(volumeObject, True, image_name, "bare", "raw")
         self.imageID = vol_image[1]['os-volume_upload_image']['image_id']
         return self.imageID
 
